@@ -90,3 +90,46 @@ guest ok = yes/no意义同“public”。
 create mask = 0700指定用户通过Samba在该共享目录中创建文件的默认权限。0600代表创建文件的权限为rw-------
 directory mask = 0700指定用户通过Samba在该共享目录中创建目录的默认权限。0600代表创建目录的权限为rwx---
 ```
+
+## samba服务的高级设置
+具体可以参考这篇文章（来自：https://zhuanlan.zhihu.com/p/35654822）
+通过合理设置组别和用户权限，设置个人需求的samba服务
+
+1）创建用户组
+sudo groupadd nasusers // 这里是在linux里面创建一个用户组
+
+2）创建用户
+分别创建两个用户，以区分访问
+useradd -g nasusers -s /usr/sbin/nologin -M nasadmin
+passwd nasadmin
+useradd -g nasusers -s /usr/sbin/nologin -M nasguest
+passwd nasguest
+这里的用户也是linux用户的概念，需要注意的是，在添加用户时，因为将shell指定到了表示无法登录的“nologin”，所以这两个用户无法通过SSH等登录系统的shell，只是作为访问Samba之用而存在。
+
+3）创建共享文件夹，并设置权限为 所有者为nasadmin，所属组为nasusers
+mkdir -p /home/nas-private
+chown -R nasadmin:nasusers /home/nas-private
+
+4)将nasadmin和nasguest用户添加到samba中，并设置samba的登录密码（这里需要区分下上面创建linux用户和密码）
+smbpasswd -a nasadmin
+smbpasswd -a nasguest
+
+5）设置samba config
+```
+[SharePrivate]
+comment = private dir #这个共享目录的注释
+path = /home/samba-private #共享目录的路径
+browseable = yes #此目录是否可以显示在客户机中
+guest ok = no #不属于Samba的用户（来宾）是否可以访问此共享目录
+writable = yes #该共享目录是否可写。此项省略时认为不可写（即只读，因为只要能访问，至少目录是可读的）。当此项设置为“yes”时，可以用“read list”列出例外（即只读）的用户；当此项设置为“no”时，可以用“write list”列出例外（即可写）的用户
+create mask = 0640 #规定新建文件的权限掩码，格式上与Linux系统权限的定义一致。例如“0640”表示所有者可读写，所属组可读，其他人什么也不能干
+directory mask = 0750 #规定新建文件夹的权限掩码，格式上与Linux系统权限的定义一致。例如“0750”表示所有者可读写及执行，所属组可读及执行，其他人什么也不能干
+valid users = @nasusers #能够访问该共享目录的用户（组），为用户组时前面加“@”号，多个用户（组）之间用逗号隔开
+write list = nasadmin #能够对共享目录进行写操作的用户（组），值的格式与valid users的相同
+read list = nasguest #能够对共享目录进行只读操作的用户（组），值的格式与valid users的相同
+vfs objects = recycle #在客户端执行删除操作时，不是将文件立即彻底删除，而是移动到一个临时目录中，便于以后需要的时候予以恢复。关于各项的含义，可以参考下面的网页:http://manpages.ubuntu.com/manpages/trusty/man8/vfs_recycle.8.html
+recycle:repositary = .recycle
+recycle:exclude = .tmp|.temp
+recycle:keeptree = yes
+recycle:versions = yes
+```
